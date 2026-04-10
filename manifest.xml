@@ -25,7 +25,7 @@
     <Form xsi:type="ItemRead">
       <DesktopSettings>
         <!-- REPLACE the URL below with your actual hosted URL once you deploy taskpane.html -->
-        <SourceLocation DefaultValue="https://YOUR-GITHUB-PAGES-URL/taskpane.html"/>
+        <SourceLocation DefaultValue="https://maudan380.github.io/iep-queue-addin/taskpane.html"/>
         <RequestedHeight>550</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -78,13 +78,13 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://YOUR-GITHUB-PAGES-URL/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://YOUR-GITHUB-PAGES-URL/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://YOUR-GITHUB-PAGES-URL/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://maudan380.github.io/iep-queue-addin/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://maudan380.github.io/iep-queue-addin/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://maudan380.github.io/iep-queue-addin/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://YOUR-GITHUB-PAGES-URL/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR-GITHUB-PAGES-URL/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://maudan380.github.io/iep-queue-addin/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://maudan380.github.io/iep-queue-addin/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="IEP Queue"/>
