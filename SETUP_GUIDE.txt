@@ -1,0 +1,171 @@
+# IEP Queue Logger — Outlook Add-in
+## Setup & Deployment Guide
+
+---
+
+## What this does
+
+A button called **"Log to Queue"** appears in your Outlook toolbar when you're reading any email.
+You click it → a side panel opens → it reads the email → AI extracts the SID, case carrier,
+date, and what needs translating → you review → click "Add to queue" → the row appears
+instantly in your Google Sheet.
+
+Works in: Outlook on the web (outlook.office.com), Outlook desktop (Windows), Outlook on Mac.
+
+---
+
+## Step 1 — Get a free Google Sheets API key (5 minutes)
+
+The add-in needs to write to your Google Sheet. Here's how to get the key:
+
+1. Go to https://console.cloud.google.com
+2. Sign in with your personal Google account (not your district account)
+3. Click "Select a project" at the top → "New Project" → name it "IEP Queue" → Create
+4. In the left menu go to: APIs & Services → Library
+5. Search for "Google Sheets API" → click it → click "Enable"
+6. Go to: APIs & Services → Credentials
+7. Click "+ Create Credentials" → "API key"
+8. Copy the key (starts with AIza...)
+9. Click "Edit API key" → under "API restrictions" select "Restrict key" →
+   choose "Google Sheets API" → Save
+
+⚠️ IMPORTANT — Make your sheet writable:
+The API key above only reads. To allow writing, you need to share your
+Google Sheet with "Anyone with the link can edit" OR restrict it to
+your Google account. The simplest approach:
+  - Open your Google Sheet
+  - Click Share (top right)
+  - Change "Restricted" to "Anyone with the link" → set to "Editor"
+  - Copy the link
+
+Alternatively, for better security, look into Google Sheets OAuth2 —
+but for a personal work tool, the above is fine.
+
+---
+
+## Step 2 — Host the add-in files on GitHub Pages (free, 10 minutes)
+
+Outlook add-ins must be served over HTTPS. GitHub Pages is free and perfect for this.
+
+1. Go to https://github.com and create a free account if you don't have one
+2. Click "+" → "New repository"
+   - Name: iep-queue-addin
+   - Set to Public
+   - Click "Create repository"
+3. Upload these 3 files to the repository:
+   - taskpane.html
+   - commands.html
+   - manifest.xml
+   (Drag and drop them into the GitHub repo page, then click "Commit changes")
+4. Go to: Settings → Pages → Source: "Deploy from a branch" → Branch: main → Save
+5. Wait 2 minutes, then your site will be live at:
+   https://YOUR-GITHUB-USERNAME.github.io/iep-queue-addin/
+
+6. Now open manifest.xml and replace ALL instances of:
+   https://YOUR-GITHUB-PAGES-URL
+   with your actual URL, e.g.:
+   https://mauriciod.github.io/iep-queue-addin
+   (there are 5 places to update in the manifest)
+
+7. Commit the updated manifest.xml to GitHub.
+
+---
+
+## Step 3 — Create placeholder icons (2 minutes)
+
+The manifest references icon files. Create 3 simple placeholder PNG images:
+- icon-16.png (16×16 pixels)
+- icon-32.png (32×32 pixels)
+- icon-80.png (80×80 pixels)
+
+Easiest way: go to https://favicon.io/favicon-generator/
+Type "Q", pick a style, download, resize copies to 16, 32, and 80px.
+Upload all 3 to your GitHub repo.
+
+---
+
+## Step 4 — Install the add-in in Outlook (5 minutes)
+
+### In Outlook on the web (outlook.office.com):
+1. Open Outlook in your browser
+2. Click the gear icon (Settings) → "View all Outlook settings"
+3. Go to: Mail → Customize actions → "Get add-ins" (or search for Add-ins)
+4. Click "My add-ins" tab → scroll to bottom → "Add a custom add-in"
+5. Choose "Add from URL" OR "Add from file"
+   - From URL: paste https://YOUR-GITHUB-URL/manifest.xml
+   - From file: upload the manifest.xml file directly
+6. Click "Add" and confirm any warnings about custom add-ins
+7. Close settings — you should now see "Log to Queue" in your Outlook toolbar
+
+### In Outlook desktop (Windows):
+1. Open Outlook
+2. Go to: File → Manage Add-ins (opens Outlook on the web add-in manager)
+3. Follow the web steps above — add-ins install the same way
+
+### If your district blocks custom add-ins:
+Your IT administrator may have restricted add-in installation.
+In that case, ask your IT department to sideload the add-in for you,
+or use the standalone paste-and-parse browser tool instead
+(ask Claude to build that version).
+
+---
+
+## Step 5 — First-time setup in the add-in
+
+1. Click any email in Outlook
+2. Click "Log to Queue" in the toolbar — a panel slides open on the right
+3. Enter your settings:
+   - Anthropic API key: your sk-ant-... key
+   - Google Sheets API key: the AIza... key from Step 1
+   - Google Sheet ID: 1XUeZpFpwdgzQOS3dcCe0JgGha1FNgORJC91wTZ_H_vQ
+   - Tab name: Mauricio
+   - Your name: Mauricio
+4. Click "Save & continue"
+
+---
+
+## Daily use
+
+1. Translation request arrives in Outlook
+2. Open the email
+3. Click "Log to Queue" button in the toolbar
+4. Panel opens → click "Read & parse this email"
+5. AI reads the email and extracts: SID, case carrier, date, sections
+6. Fields with ⚠ need your review — click to edit them
+7. Click "+ Add to queue"
+8. Row appears in your Google Sheet instantly ✓
+
+---
+
+## Troubleshooting
+
+**"Write permission denied" error:**
+→ Your Google Sheet needs to be shared with "Anyone with the link — Editor"
+→ See Step 1 above
+
+**"Invalid Anthropic API key":**
+→ Click the ⚙ gear icon in the add-in → re-enter your API key
+
+**Button doesn't appear in Outlook:**
+→ Refresh Outlook / close and reopen
+→ Check that the manifest.xml URL is accessible in a browser
+
+**Add-in shows but won't load:**
+→ Check that all 3 files are on GitHub Pages and the URLs in manifest.xml are correct
+→ Make sure your GitHub Pages site is live (visit the URL in a browser first)
+
+**District blocks the add-in:**
+→ Contact IT and ask them to sideload manifest.xml, or use the browser tool alternative
+
+---
+
+## Files in this package
+
+- manifest.xml       → Tells Outlook what the add-in is and where to find it
+- taskpane.html      → The actual add-in UI and all the logic
+- commands.html      → Required stub file (no edits needed)
+- SETUP_GUIDE.txt    → This file
+
+---
+
+Questions? Open Claude and describe the error you're seeing.

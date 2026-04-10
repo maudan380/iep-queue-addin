@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IEP Queue Logger</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f5f3;
+    --bg3: #ebebeb;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --text: #1a1a18;
+    --text2: #5a5a56;
+    --text3: #8a8a84;
+    --accent: #2563eb;
+    --accent-bg: #eff6ff;
+    --danger: #b91c1c;
+    --danger-bg: #fef2f2;
+    --success: #15803d;
+    --success-bg: #f0fdf4;
+    --warn-bg: #fffbeb;
+    --warn: #92400e;
+    --r: 7px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'Courier New', monospace;
+  }
+
+  html, body {
+    font-family: var(--font);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    height: 100%;
+    overflow-x: hidden;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .topbar-icon {
+    width: 22px; height: 22px;
+    background: var(--accent);
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .topbar-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .topbar-sub { font-size: 11px; color: var(--text3); }
+  .topbar-spacer { flex: 1; }
+  .settings-btn-sm {
+    background: none; border: none; cursor: pointer;
+    color: var(--text3); font-size: 16px; padding: 2px 4px;
+  }
+  .settings-btn-sm:hover { color: var(--text); }
+
+  /* ── VIEWS ── */
+  .view { display: none; padding: 14px; }
+  .view.active { display: block; }
+
+  /* ── SETUP VIEW ── */
+  .setup-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .setup-desc { font-size: 12px; color: var(--text2); margin-bottom: 14px; line-height: 1.6; }
+  .field-group { margin-bottom: 12px; }
+  .field-lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 4px; }
+  .field-input {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    font-family: var(--font); font-size: 13px; color: var(--text);
+    background: var(--bg);
+  }
+  .field-input:focus { outline: none; border-color: var(--accent); }
+  .field-input.mono { font-family: var(--mono); font-size: 12px; }
+  .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; line-height: 1.5; }
+  .save-setup-btn {
+    width: 100%; padding: 9px;
+    background: var(--accent); color: #fff;
+    border: none; border-radius: var(--r);
+    font-family: var(--font); font-size: 13px; font-weight: 600;
+    cursor: pointer; margin-top: 6px;
+  }
+  .save-setup-btn:hover { opacity: 0.88; }
+
+  /* ── MAIN VIEW ── */
+  .parse-btn {
+    width: 100%; padding: 10px;
+    background: var(--text); color: var(--bg);
+    border: none; border-radius: var(--r);
+    font-family: var(--font); font-size: 13px; font-weight: 600;
+    cursor: pointer; margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .parse-btn:hover { opacity: 0.86; }
+  .parse-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .status-bar {
+    display: none; align-items: center; gap: 8px;
+    padding: 8px 0; font-size: 12px; color: var(--text2);
+    margin-bottom: 8px;
+  }
+  .spinner {
+    width: 13px; height: 13px;
+    border: 1.5px solid var(--border2);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.65s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .alert {
+    padding: 9px 12px; border-radius: var(--r);
+    font-size: 12px; margin-bottom: 10px; line-height: 1.5;
+    display: none;
+  }
+  .alert.error { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(185,28,28,0.2); }
+  .alert.success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(21,128,61,0.2); }
+  .alert.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(146,64,14,0.2); }
+
+  /* ── EXTRACTED FIELDS ── */
+  .fields-card {
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    overflow: hidden;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .fields-card-header {
+    padding: 8px 12px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .fields-card-body { padding: 10px 12px; }
+  .extracted-field { margin-bottom: 10px; }
+  .extracted-field:last-child { margin-bottom: 0; }
+  .extracted-lbl {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text3); margin-bottom: 3px;
+  }
+  .extracted-input {
+    width: 100%; padding: 6px 8px;
+    border: 1px solid var(--border2); border-radius: 5px;
+    font-family: var(--font); font-size: 12px; color: var(--text);
+    background: var(--bg);
+  }
+  .extracted-input:focus { outline: none; border-color: var(--accent); }
+  .confidence-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 99px; margin-left: 5px; vertical-align: middle;
+  }
+  .conf-high { background: var(--success-bg); color: var(--success); }
+  .conf-low { background: var(--warn-bg); color: var(--warn); }
+
+  .add-queue-btn {
+    width: 100%; padding: 10px;
+    background: var(--success); color: #fff;
+    border: none; border-radius: var(--r);
+    font-family: var(--font); font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    display: none;
+  }
+  .add-queue-btn:hover { opacity: 0.88; }
+  .add-queue-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ── EMAIL PREVIEW ── */
+  .email-preview {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 10px;
+    font-size: 11px; color: var(--text2); line-height: 1.6;
+    max-height: 100px; overflow-y: auto;
+    margin-bottom: 12px; display: none;
+    font-family: var(--mono);
+    white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* ── TABS in main view ── */
+  .tab-row { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab-pill {
+    padding: 5px 12px; border-radius: 99px;
+    border: 1px solid var(--border2); background: transparent;
+    cursor: pointer; font-size: 12px; color: var(--text2); font-family: var(--font);
+  }
+  .tab-pill.active {
+    background: var(--accent-bg); color: var(--accent);
+    border-color: rgba(37,99,235,0.3); font-weight: 500;
+  }
+
+  /* ── HISTORY ── */
+  .history-empty { font-size: 12px; color: var(--text3); text-align: center; padding: 24px 0; }
+  .history-item {
+    border: 1px solid var(--border); border-radius: var(--r);
+    padding: 9px 11px; margin-bottom: 8px; font-size: 12px;
+  }
+  .history-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .history-sid { font-weight: 600; font-size: 13px; }
+  .history-date { font-size: 11px; color: var(--text3); flex-shrink: 0; }
+  .history-carrier { color: var(--text2); margin-top: 2px; }
+  .history-sections { color: var(--text3); margin-top: 2px; font-size: 11px; }
+
+  a { color: var(--accent); font-size: 12px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-icon">Q</div>
+  <div>
+    <div class="topbar-title">IEP Queue Logger</div>
+    <div class="topbar-sub">NMUSD Translation Services</div>
+  </div>
+  <div class="topbar-spacer"></div>
+  <button class="settings-btn-sm" onclick="showView('setup')" title="Settings">&#9881;</button>
+</div>
+
+<!-- ══ SETUP VIEW ══ -->
+<div class="view active" id="view-setup">
+  <div class="setup-title">First-time setup</div>
+  <div class="setup-desc">Enter your API keys and Google Sheet details. These are saved in your browser only and never sent anywhere except their respective services.</div>
+
+  <div class="field-group">
+    <div class="field-lbl">Anthropic API key</div>
+    <input class="field-input mono" type="password" id="setup-anthropic-key" placeholder="sk-ant-api03-..." />
+    <div class="field-hint">Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-lbl">Google Sheets API key</div>
+    <input class="field-input mono" type="password" id="setup-sheets-key" placeholder="AIzaSy..." />
+    <div class="field-hint">
+      Get this free at <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a>.<br>
+      Steps: Create project → Enable "Google Sheets API" → Credentials → Create API key.
+    </div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-lbl">Google Sheet ID</div>
+    <input class="field-input mono" type="text" id="setup-sheet-id" placeholder="1XUeZpFpwdgzQOS3dcCe0JgG..." />
+    <div class="field-hint">The long ID in your Google Sheet's URL between /d/ and /edit</div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-lbl">Sheet tab name (your queue tab)</div>
+    <input class="field-input" type="text" id="setup-tab-name" placeholder="Mauricio" />
+    <div class="field-hint">Exact name of your tab in the spreadsheet (e.g. Mauricio)</div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-lbl">Your name (for the queue)</div>
+    <input class="field-input" type="text" id="setup-your-name" placeholder="Mauricio" />
+  </div>
+
+  <button class="save-setup-btn" onclick="saveSetup()">Save &amp; continue →</button>
+
+  <div class="alert error" id="setup-error"></div>
+</div>
+
+<!-- ══ MAIN VIEW ══ -->
+<div class="view" id="view-main">
+
+  <div class="tab-row">
+    <button class="tab-pill active" id="tab-parse-btn" onclick="switchMainTab('parse')">Parse email</button>
+    <button class="tab-pill" id="tab-history-btn" onclick="switchMainTab('history')">History</button>
+  </div>
+
+  <!-- Parse tab -->
+  <div id="main-parse">
+    <button class="parse-btn" id="parse-btn" onclick="parseEmail()">
+      <span id="parse-btn-icon">&#128269;</span>
+      <span id="parse-btn-text">Read &amp; parse this email</span>
+    </button>
+
+    <div class="status-bar" id="status-bar">
+      <div class="spinner"></div>
+      <span id="status-text">Reading email...</span>
+    </div>
+
+    <div class="alert error" id="main-error"></div>
+    <div class="alert success" id="main-success"></div>
+    <div class="alert warn" id="main-warn"></div>
+
+    <div class="email-preview" id="email-preview"></div>
+
+    <div class="fields-card" id="fields-card">
+      <div class="fields-card-header">
+        <span>Extracted fields — review before adding</span>
+        <a href="#" onclick="togglePreview(event)" id="preview-toggle">Show email</a>
+      </div>
+      <div class="fields-card-body">
+        <div class="extracted-field">
+          <div class="extracted-lbl">Student ID (SID) <span class="confidence-badge" id="conf-sid"></span></div>
+          <input class="extracted-input" type="text" id="ex-sid" placeholder="e.g. 197154" />
+        </div>
+        <div class="extracted-field">
+          <div class="extracted-lbl">Case carrier <span class="confidence-badge" id="conf-carrier"></span></div>
+          <input class="extracted-input" type="text" id="ex-carrier" placeholder="e.g. Marie Hisaka" />
+        </div>
+        <div class="extracted-field">
+          <div class="extracted-lbl">Date requested</div>
+          <input class="extracted-input" type="text" id="ex-date" placeholder="e.g. 4/10/26" />
+        </div>
+        <div class="extracted-field">
+          <div class="extracted-lbl">Sections / scope <span class="confidence-badge" id="conf-sections"></span></div>
+          <input class="extracted-input" type="text" id="ex-sections" placeholder="e.g. Whole IEP" />
+        </div>
+        <div class="extracted-field">
+          <div class="extracted-lbl">Notes (optional)</div>
+          <input class="extracted-input" type="text" id="ex-notes" placeholder="Any other notes..." />
+        </div>
+      </div>
+    </div>
+
+    <button class="add-queue-btn" id="add-queue-btn" onclick="addToQueue()">+ Add to queue</button>
+  </div>
+
+  <!-- History tab -->
+  <div id="main-history" style="display:none">
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// STORAGE
+// ════════════════════════════════════════════════════
+const STORE = {
+  get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  str: k => localStorage.getItem(k) || ''
+};
+
+const CFG_KEYS = {
+  anthropic: 'nmusd_q_anthropic',
+  sheets: 'nmusd_q_sheets',
+  sheetId: 'nmusd_q_sheetid',
+  tabName: 'nmusd_q_tab',
+  yourName: 'nmusd_q_name',
+  history: 'nmusd_q_history'
+};
+
+// ════════════════════════════════════════════════════
+// OFFICE.JS INIT
+// ════════════════════════════════════════════════════
+let officeReady = false;
+let currentEmailBody = '';
+let currentEmailSender = '';
+let currentEmailSubject = '';
+
+Office.onReady(info => {
+  officeReady = true;
+  if (isSetupComplete()) {
+    showView('main');
+    loadSetupFields();
+  } else {
+    showView('setup');
+    loadSetupFields();
+  }
+});
+
+// ════════════════════════════════════════════════════
+// SETUP
+// ════════════════════════════════════════════════════
+function isSetupComplete() {
+  return !!(STORE.str(CFG_KEYS.anthropic) && STORE.str(CFG_KEYS.sheets) && STORE.str(CFG_KEYS.sheetId) && STORE.str(CFG_KEYS.tabName));
+}
+
+function loadSetupFields() {
+  const fields = [
+    ['setup-anthropic-key', CFG_KEYS.anthropic],
+    ['setup-sheets-key', CFG_KEYS.sheets],
+    ['setup-sheet-id', CFG_KEYS.sheetId],
+    ['setup-tab-name', CFG_KEYS.tabName],
+    ['setup-your-name', CFG_KEYS.yourName]
+  ];
+  fields.forEach(([id, key]) => {
+    const val = STORE.str(key);
+    if (val) document.getElementById(id).value = '••••••••';
+  });
+  // Actually show real values for non-secret fields
+  const tabVal = STORE.str(CFG_KEYS.tabName);
+  const nameVal = STORE.str(CFG_KEYS.yourName);
+  const idVal = STORE.str(CFG_KEYS.sheetId);
+  if (tabVal) document.getElementById('setup-tab-name').value = tabVal;
+  if (nameVal) document.getElementById('setup-your-name').value = nameVal;
+  if (idVal) document.getElementById('setup-sheet-id').value = idVal;
+}
+
+function saveSetup() {
+  const errEl = document.getElementById('setup-error');
+  errEl.style.display = 'none';
+
+  const anthropic = document.getElementById('setup-anthropic-key').value.trim();
+  const sheets = document.getElementById('setup-sheets-key').value.trim();
+  const sheetId = document.getElementById('setup-sheet-id').value.trim();
+  const tabName = document.getElementById('setup-tab-name').value.trim();
+  const yourName = document.getElementById('setup-your-name').value.trim();
+
+  if (!sheetId) { showAlert('setup-error', 'Please enter your Google Sheet ID.'); return; }
+  if (!tabName) { showAlert('setup-error', 'Please enter your tab name.'); return; }
+
+  // Only save non-placeholder values
+  if (anthropic && !anthropic.startsWith('•')) {
+    if (!anthropic.startsWith('sk-')) { showAlert('setup-error', "Anthropic key should start with 'sk-ant-...'"); return; }
+    STORE.set(CFG_KEYS.anthropic, anthropic);
+  }
+  if (sheets && !sheets.startsWith('•')) {
+    if (!sheets.startsWith('AIza')) { showAlert('setup-error', "Google Sheets key should start with 'AIza...'"); return; }
+    STORE.set(CFG_KEYS.sheets, sheets);
+  }
+  if (!STORE.str(CFG_KEYS.anthropic)) { showAlert('setup-error', 'Please enter your Anthropic API key.'); return; }
+  if (!STORE.str(CFG_KEYS.sheets)) { showAlert('setup-error', 'Please enter your Google Sheets API key.'); return; }
+
+  STORE.set(CFG_KEYS.sheetId, sheetId);
+  STORE.set(CFG_KEYS.tabName, tabName);
+  STORE.set(CFG_KEYS.yourName, yourName || 'Mauricio');
+
+  showView('main');
+}
+
+// ════════════════════════════════════════════════════
+// VIEWS & TABS
+// ════════════════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  if (name === 'main') renderHistory();
+}
+
+function switchMainTab(tab) {
+  document.getElementById('main-parse').style.display = tab === 'parse' ? 'block' : 'none';
+  document.getElementById('main-history').style.display = tab === 'history' ? 'block' : 'none';
+  document.getElementById('tab-parse-btn').classList.toggle('active', tab === 'parse');
+  document.getElementById('tab-history-btn').classList.toggle('active', tab === 'history');
+  if (tab === 'history') renderHistory();
+}
+
+function showAlert(id, msg, type = 'error') {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.className = 'alert ' + type; el.style.display = 'block';
+}
+function hideAlert(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+function setStatus(msg, show) {
+  document.getElementById('status-bar').style.display = show ? 'flex' : 'none';
+  if (msg) document.getElementById('status-text').textContent = msg;
+}
+
+let emailPreviewVisible = false;
+function togglePreview(e) {
+  e.preventDefault();
+  emailPreviewVisible = !emailPreviewVisible;
+  document.getElementById('email-preview').style.display = emailPreviewVisible ? 'block' : 'none';
+  document.getElementById('preview-toggle').textContent = emailPreviewVisible ? 'Hide email' : 'Show email';
+}
+
+// ════════════════════════════════════════════════════
+// PARSE EMAIL
+// ════════════════════════════════════════════════════
+async function parseEmail() {
+  ['main-error','main-success','main-warn'].forEach(hideAlert);
+  document.getElementById('fields-card').style.display = 'none';
+  document.getElementById('add-queue-btn').style.display = 'none';
+
+  const btn = document.getElementById('parse-btn');
+  btn.disabled = true;
+  setStatus('Reading email from Outlook...', true);
+
+  try {
+    // Read email via Office.js
+    const item = Office.context.mailbox.item;
+    currentEmailSubject = item.subject || '';
+    currentEmailSender = item.from ? (item.from.displayName || item.from.emailAddress || '') : '';
+
+    // Get email body (plain text)
+    await new Promise((resolve, reject) => {
+      item.body.getAsync(Office.CoercionType.Text, result => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          currentEmailBody = result.value || '';
+          resolve();
+        } else {
+          reject(new Error('Could not read email body: ' + (result.error?.message || 'unknown error')));
+        }
+      });
+    });
+
+    setStatus('Parsing with AI...', true);
+
+    const today = new Date();
+    const dateStr = `${today.getMonth()+1}/${today.getDate()}/${String(today.getFullYear()).slice(2)}`;
+
+    const prompt = `You are parsing an email from a special education school district to extract translation request information.
+
+Email details:
+SUBJECT: ${currentEmailSubject}
+FROM: ${currentEmailSender}
+BODY:
+${currentEmailBody.substring(0, 3000)}
+
+Extract the following fields. Return ONLY valid JSON, nothing else:
+{
+  "sid": "student ID number (digits only, look for SID, Student ID, ID#, student number, or a standalone 5-7 digit number)",
+  "sid_confidence": "high" or "low",
+  "case_carrier": "the name of the person who created the IEP / case carrier / special ed teacher (NOT the email sender unless they are the case carrier)",
+  "carrier_confidence": "high" or "low",
+  "sections": "what needs to be translated: 'Whole IEP', specific sections like 'Goals only', 'OT Report', etc.",
+  "sections_confidence": "high" or "low",
+  "notes": "any other relevant info such as urgency, special instructions, or student name if clearly mentioned"
+}
+
+Rules:
+- If a field cannot be found, use an empty string "" and set confidence to "low"
+- The case_carrier is the person whose student/caseload this is, often mentioned as "my student", "case carrier:", or signed at the bottom
+- For sections, if they say "whole IEP" or "entire IEP" or "full IEP" use "Whole IEP". If they mention specific sections list them.
+- Return ONLY the JSON object, no markdown, no explanation`;
+
+    const parsed = await callAnthropic(prompt);
+
+    let data;
+    try {
+      const cleaned = parsed.replace(/```json|```/g, '').trim();
+      data = JSON.parse(cleaned);
+    } catch {
+      throw new Error('AI returned unexpected format. Please fill in the fields manually.');
+    }
+
+    // Populate fields
+    document.getElementById('ex-sid').value = data.sid || '';
+    document.getElementById('ex-carrier').value = data.case_carrier || '';
+    document.getElementById('ex-date').value = dateStr;
+    document.getElementById('ex-sections').value = data.sections || '';
+    document.getElementById('ex-notes').value = data.notes || '';
+
+    // Show confidence badges
+    setBadge('conf-sid', data.sid_confidence);
+    setBadge('conf-carrier', data.carrier_confidence);
+    setBadge('conf-sections', data.sections_confidence);
+
+    // Show email preview (truncated)
+    const preview = document.getElementById('email-preview');
+    preview.textContent = `FROM: ${currentEmailSender}\nSUBJECT: ${currentEmailSubject}\n\n${currentEmailBody.substring(0, 400)}${currentEmailBody.length > 400 ? '...' : ''}`;
+
+    document.getElementById('fields-card').style.display = 'block';
+    document.getElementById('add-queue-btn').style.display = 'block';
+
+    // Warn if any low confidence
+    const lowFields = [];
+    if (data.sid_confidence === 'low') lowFields.push('SID');
+    if (data.carrier_confidence === 'low') lowFields.push('case carrier');
+    if (data.sections_confidence === 'low') lowFields.push('sections');
+    if (lowFields.length > 0) {
+      showAlert('main-warn', `Low confidence on: ${lowFields.join(', ')}. Please review and correct before adding to queue.`, 'warn');
+    }
+
+  } catch(e) {
+    showAlert('main-error', e.message);
+  }
+
+  btn.disabled = false;
+  setStatus('', false);
+}
+
+function setBadge(id, conf) {
+  const el = document.getElementById(id);
+  if (!conf) { el.textContent = ''; return; }
+  el.textContent = conf === 'high' ? '✓ confident' : '⚠ review';
+  el.className = 'confidence-badge ' + (conf === 'high' ? 'conf-high' : 'conf-low');
+}
+
+// ════════════════════════════════════════════════════
+// ADD TO GOOGLE SHEETS QUEUE
+// ════════════════════════════════════════════════════
+async function addToQueue() {
+  ['main-error','main-success','main-warn'].forEach(hideAlert);
+
+  const sid = document.getElementById('ex-sid').value.trim();
+  const carrier = document.getElementById('ex-carrier').value.trim();
+  const date = document.getElementById('ex-date').value.trim();
+  const sections = document.getElementById('ex-sections').value.trim();
+  const notes = document.getElementById('ex-notes').value.trim();
+
+  if (!sid) { showAlert('main-error', 'SID is required. Please enter the Student ID.'); return; }
+  if (!sections) { showAlert('main-error', 'Please specify what needs to be translated.'); return; }
+
+  const btn = document.getElementById('add-queue-btn');
+  btn.disabled = true; btn.textContent = 'Adding...';
+  setStatus('Writing to Google Sheets...', true);
+
+  try {
+    const sheetId = STORE.str(CFG_KEYS.sheetId);
+    const tabName = STORE.str(CFG_KEYS.tabName);
+    const sheetsKey = STORE.str(CFG_KEYS.sheets);
+
+    // Find next empty row
+    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A:A')}?key=${sheetsKey}`;
+    const readResp = await fetch(readUrl);
+    if (!readResp.ok) {
+      const errData = await readResp.json().catch(() => ({}));
+      throw new Error('Google Sheets error: ' + (errData.error?.message || readResp.status) + '. Check your Sheets API key and Sheet ID.');
+    }
+    const readData = await readResp.json();
+    const existingRows = readData.values ? readData.values.length : 1;
+    const nextRow = Math.max(existingRows + 1, 3); // start after header rows
+
+    // Determine row number value (skip header rows 1-2)
+    const rowNum = nextRow - 2;
+
+    // Write row: # | SID | Case Carrier | Date Requested | Sections/Scope | Notes
+    const values = [[rowNum > 0 ? rowNum : '', sid, carrier, date, sections, notes]];
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName + '!A' + nextRow)}:append?valueInputOption=USER_ENTERED&key=${sheetsKey}`;
+
+    const writeResp = await fetch(writeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values })
+    });
+
+    if (!writeResp.ok) {
+      const errData = await writeResp.json().catch(() => ({}));
+      // Google Sheets API requires OAuth for writes — handle this gracefully
+      if (writeResp.status === 401 || writeResp.status === 403) {
+        throw new Error('Write permission denied. The Google Sheets API key only allows reading. See the setup guide for how to enable write access with OAuth.');
+      }
+      throw new Error('Could not write to sheet: ' + (errData.error?.message || writeResp.status));
+    }
+
+    // Save to local history
+    const history = STORE.get(CFG_KEYS.history) || [];
+    history.unshift({ sid, carrier, date, sections, notes, addedAt: new Date().toISOString() });
+    if (history.length > 50) history.length = 50;
+    STORE.set(CFG_KEYS.history, history);
+
+    showAlert('main-success', `✓ Added to queue: SID ${sid} — ${sections}`,'success');
+    document.getElementById('add-queue-btn').style.display = 'none';
+    document.getElementById('fields-card').style.display = 'none';
+
+  } catch(e) {
+    showAlert('main-error', e.message);
+  }
+
+  btn.disabled = false; btn.textContent = '+ Add to queue';
+  setStatus('', false);
+}
+
+// ════════════════════════════════════════════════════
+// HISTORY
+// ════════════════════════════════════════════════════
+function renderHistory() {
+  const container = document.getElementById('history-list');
+  const history = STORE.get(CFG_KEYS.history) || [];
+  if (!history.length) {
+    container.innerHTML = '<div class="history-empty">No entries logged yet in this browser.</div>';
+    return;
+  }
+  container.innerHTML = history.map(h => `
+    <div class="history-item">
+      <div class="history-item-top">
+        <div class="history-sid">SID: ${h.sid}</div>
+        <div class="history-date">${h.date}</div>
+      </div>
+      <div class="history-carrier">${h.carrier || 'Case carrier unknown'}</div>
+      <div class="history-sections">${h.sections}</div>
+    </div>`).join('');
+}
+
+// ════════════════════════════════════════════════════
+// ANTHROPIC API
+// ════════════════════════════════════════════════════
+async function callAnthropic(userMsg) {
+  const key = STORE.str(CFG_KEYS.anthropic);
+  if (!key) throw new Error('No Anthropic API key. Go to settings (⚙) to add one.');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: userMsg }]
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    if (resp.status === 401) throw new Error('Invalid Anthropic API key. Check your settings.');
+    throw new Error('Anthropic API error: ' + (err.error?.message || resp.status));
+  }
+  const data = await resp.json();
+  return data.content[0].text.trim();
+}
+</script>
+</body>
+</html>
