@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NMUSD Document Translator</title>
+<script>
+// Load libraries with fallback CDNs and load verification
+const LIBS = {
+  mammoth: [
+    'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js',
+    'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js'
+  ],
+  docx: [
+    'https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
+    'https://unpkg.com/docx@8.5.0/build/index.umd.js'
+  ]
+};
+let mammothReady = false, docxReady = false;
+function loadScript(urls, checkFn, onDone) {
+  let idx = 0;
+  function tryNext() {
+    if (idx >= urls.length) { onDone(false); return; }
+    const s = document.createElement('script');
+    s.src = urls[idx++];
+    s.onload = () => { if (checkFn()) { onDone(true); } else { tryNext(); } };
+    s.onerror = () => tryNext();
+    document.head.appendChild(s);
+  }
+  tryNext();
+}
+loadScript(LIBS.mammoth, () => typeof mammoth !== 'undefined', ok => {
+  mammothReady = ok;
+  if (!ok) console.warn('mammoth failed to load from all CDNs');
+});
+loadScript(LIBS.docx, () => typeof docx !== 'undefined', ok => {
+  docxReady = ok;
+  if (!ok) console.warn('docx failed to load from all CDNs');
+});
+</script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eceae6;
+  --border: rgba(0,0,0,0.10); --border2: rgba(0,0,0,0.18); --border3: rgba(0,0,0,0.30);
+  --text: #181816; --text2: #57574f; --text3: #909088;
+  --accent: #2563eb; --accent-bg: #eff6ff; --accent-border: rgba(37,99,235,0.22);
+  --danger: #b91c1c; --danger-bg: #fef2f2; --danger-border: rgba(185,28,28,0.2);
+  --success: #15803d; --success-bg: #f0fdf4; --success-border: rgba(21,128,61,0.2);
+  --warn: #92400e; --warn-bg: #fffbeb; --warn-border: rgba(146,64,14,0.2);
+  --r: 8px; --rlg: 12px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b19; --bg2: #232321; --bg3: #2c2c29;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14); --border3: rgba(255,255,255,0.24);
+    --text: #efefe9; --text2: #a5a59d; --text3: #65655e;
+    --accent: #60a5fa; --accent-bg: #1e3a5f; --accent-border: rgba(96,165,250,0.25);
+    --danger: #f87171; --danger-bg: #3b0f0f; --danger-border: rgba(248,113,113,0.25);
+    --success: #4ade80; --success-bg: #0f2e1a; --success-border: rgba(74,222,128,0.25);
+    --warn: #fbbf24; --warn-bg: #2d1f00; --warn-border: rgba(251,191,36,0.25);
+  }
+}
+html { font-family: var(--font); background: var(--bg2); color: var(--text); font-size: 15px; }
+
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+.topbar {
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 100;
+}
+.topbar-logo {
+  width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+}
+.topbar-name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.topbar-sub { font-size: 12px; color: var(--text3); }
+.topbar-spacer { flex: 1; }
+.topbar-btn {
+  font-size: 12px; padding: 5px 12px; border: 1px solid var(--border2);
+  border-radius: 99px; color: var(--text3); cursor: pointer; background: transparent;
+  font-family: var(--font);
+}
+.topbar-btn:hover { background: var(--bg2); color: var(--text); }
+.topbar-btn.ok { color: var(--success); border-color: var(--success-border); }
+
+.content { max-width: 820px; margin: 0 auto; width: 100%; padding: 28px 24px 80px; }
+
+/* ── UPLOAD ZONE ── */
+.upload-zone {
+  border: 2px dashed var(--border2); border-radius: var(--rlg);
+  padding: 40px 24px; text-align: center; cursor: pointer;
+  background: var(--bg); transition: border-color 0.15s, background 0.15s;
+  margin-bottom: 20px;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent); background: var(--accent-bg);
+}
+.upload-icon { font-size: 36px; margin-bottom: 12px; }
+.upload-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.upload-sub { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
+.upload-btn {
+  display: inline-block; padding: 8px 20px;
+  border: 1px solid var(--border2); border-radius: var(--r);
+  background: transparent; cursor: pointer; font-size: 13px;
+  color: var(--text2); font-family: var(--font);
+}
+.upload-btn:hover { background: var(--bg2); }
+#file-input { display: none; }
+
+/* ── FILE INFO ── */
+.file-info {
+  display: none; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--rlg); padding: 16px 20px; margin-bottom: 20px;
+  display: none; align-items: center; gap: 14px;
+}
+.file-icon { font-size: 28px; flex-shrink: 0; }
+.file-details { flex: 1; }
+.file-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.file-meta { font-size: 12px; color: var(--text3); }
+.file-clear { background: none; border: none; cursor: pointer; color: var(--text3); font-size: 20px; padding: 2px 6px; }
+.file-clear:hover { color: var(--danger); }
+
+/* ── OPTIONS ── */
+.options-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--rlg); padding: 18px 20px; margin-bottom: 20px;
+}
+.options-title { font-size: 13px; font-weight: 600; margin-bottom: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+.option-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.option-row:last-child { margin-bottom: 0; }
+.option-row label { font-size: 13px; color: var(--text2); flex: 1; }
+.option-row select, .option-row input[type=number] {
+  padding: 6px 10px; border: 1px solid var(--border2); border-radius: var(--r);
+  background: var(--bg); font-family: var(--font); font-size: 13px; color: var(--text);
+  width: 160px;
+}
+.option-row select:focus, .option-row input:focus { outline: none; border-color: var(--accent); }
+
+/* ── PROGRESS ── */
+.progress-card {
+  display: none; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--rlg); padding: 20px; margin-bottom: 20px;
+}
+.progress-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.progress-bar-wrap { height: 8px; background: var(--bg3); border-radius: 99px; overflow: hidden; margin-bottom: 10px; }
+.progress-bar { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.3s; width: 0%; }
+.progress-status { font-size: 13px; color: var(--text2); margin-bottom: 6px; }
+.progress-detail { font-size: 12px; color: var(--text3); }
+.chunk-list { margin-top: 14px; max-height: 200px; overflow-y: auto; }
+.chunk-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 0; font-size: 12px; color: var(--text2);
+  border-bottom: 1px solid var(--border);
+}
+.chunk-item:last-child { border-bottom: none; }
+.chunk-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chunk-dot.pending { background: var(--border2); }
+.chunk-dot.active { background: var(--accent); animation: pulse 1s infinite; }
+.chunk-dot.done { background: var(--success); }
+.chunk-dot.error { background: var(--danger); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ── TRANSLATE BTN ── */
+.translate-btn {
+  width: 100%; padding: 13px; background: var(--text); color: var(--bg);
+  border: none; border-radius: var(--r); font-family: var(--font);
+  font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 14px;
+}
+.translate-btn:hover { opacity: 0.86; }
+.translate-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.cancel-btn {
+  width: 100%; padding: 10px; background: transparent; color: var(--danger);
+  border: 1px solid var(--danger-border); border-radius: var(--r);
+  font-family: var(--font); font-size: 14px; cursor: pointer; margin-bottom: 14px;
+  display: none;
+}
+.cancel-btn:hover { background: var(--danger-bg); }
+
+/* ── ALERTS ── */
+.alert { padding: 12px 16px; border-radius: var(--r); font-size: 13px; line-height: 1.6; margin-bottom: 14px; display: none; }
+.alert.error { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); }
+.alert.success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+.alert.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+
+/* ── RESULT ── */
+.result-card {
+  display: none; background: var(--bg); border: 1px solid var(--success-border);
+  border-radius: var(--rlg); padding: 20px; margin-bottom: 20px;
+}
+.result-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--success); }
+.result-sub { font-size: 13px; color: var(--text2); margin-bottom: 16px; }
+.download-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 22px; background: var(--success); color: #fff;
+  border: none; border-radius: var(--r); font-family: var(--font);
+  font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.download-btn:hover { opacity: 0.88; }
+
+/* ── SETTINGS MODAL ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4); z-index: 200;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg); border-radius: var(--rlg);
+  padding: 24px; width: 100%; max-width: 460px; margin: 20px;
+  border: 1px solid var(--border);
+}
+.modal-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 18px; line-height: 1.6; }
+.field-lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 5px; }
+.field-in {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--border2);
+  border-radius: var(--r); background: var(--bg); font-family: var(--mono);
+  font-size: 13px; color: var(--text); margin-bottom: 14px;
+}
+.field-in:focus { outline: none; border-color: var(--accent); }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-save {
+  padding: 9px 22px; background: var(--accent); color: #fff;
+  border: none; border-radius: var(--r); font-family: var(--font);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.modal-save:hover { opacity: 0.88; }
+.modal-cancel {
+  padding: 9px 16px; background: transparent; color: var(--text2);
+  border: 1px solid var(--border2); border-radius: var(--r);
+  font-family: var(--font); font-size: 13px; cursor: pointer;
+}
+.modal-cancel:hover { background: var(--bg2); }
+
+/* ── PREVIEW ── */
+.preview-card {
+  display: none; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--rlg); margin-bottom: 20px; overflow: hidden;
+}
+.preview-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 500;
+}
+.preview-body { padding: 16px; max-height: 300px; overflow-y: auto; font-size: 13px; color: var(--text2); line-height: 1.7; }
+.preview-body p { margin-bottom: 8px; }
+.preview-body h1, .preview-body h2, .preview-body h3 { font-weight: 600; margin-bottom: 6px; color: var(--text); }
+.preview-body table { border-collapse: collapse; width: 100%; margin-bottom: 10px; font-size: 12px; }
+.preview-body td, .preview-body th { border: 1px solid var(--border2); padding: 4px 8px; }
+
+@media (max-width: 600px) { .content { padding: 16px; } .topbar { padding: 0 16px; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+<header class="topbar">
+  <div class="topbar-logo">D</div>
+  <div>
+    <div class="topbar-name">Document Translator</div>
+    <div class="topbar-sub">NMUSD · English → Spanish</div>
+  </div>
+  <div class="topbar-spacer"></div>
+  <button class="topbar-btn" id="key-badge" onclick="openSettings()">⚙ Settings</button>
+</header>
+
+<div class="content">
+
+  <!-- UPLOAD ZONE -->
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()"
+       ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+    <div class="upload-icon">📄</div>
+    <div class="upload-title">Upload your Word document</div>
+    <div class="upload-sub">Drag and drop a .docx file here, or click to browse</div>
+    <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose file</button>
+    <input type="file" id="file-input" accept=".docx" onchange="handleFile(event)" />
+  </div>
+
+  <!-- FILE INFO -->
+  <div class="file-info" id="file-info">
+    <div class="file-icon">📝</div>
+    <div class="file-details">
+      <div class="file-name" id="file-name"></div>
+      <div class="file-meta" id="file-meta"></div>
+    </div>
+    <button class="file-clear" onclick="clearFile()" title="Remove file">×</button>
+  </div>
+
+  <!-- DOCUMENT PREVIEW -->
+  <div class="preview-card" id="preview-card">
+    <div class="preview-head">
+      <span>Document preview</span>
+      <button onclick="togglePreview()" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--text3);" id="preview-toggle-btn">Hide</button>
+    </div>
+    <div class="preview-body" id="preview-body"></div>
+  </div>
+
+  <!-- OPTIONS -->
+  <div class="options-card" id="options-card" style="display:none;">
+    <div class="options-title">Translation options</div>
+    <div class="option-row">
+      <label>Student gender in document</label>
+      <select id="opt-gender">
+        <option value="feminine">Feminine (la estudiante)</option>
+        <option value="masculine">Masculine (el estudiante)</option>
+        <option value="neutral">Keep as written</option>
+      </select>
+    </div>
+    <div class="option-row">
+      <label>Chunk size (words per API call)</label>
+      <input type="number" id="opt-chunk" value="600" min="200" max="1200" />
+    </div>
+    <div class="option-row">
+      <label>Delay between chunks (seconds)</label>
+      <input type="number" id="opt-delay" value="1" min="0" max="10" />
+    </div>
+  </div>
+
+  <!-- ALERTS -->
+  <div class="alert error" id="main-error"></div>
+  <div class="alert warn" id="main-warn"></div>
+
+  <!-- TRANSLATE BUTTON -->
+  <button class="translate-btn" id="translate-btn" onclick="startTranslation()" style="display:none;">
+    Translate document →
+  </button>
+  <button class="cancel-btn" id="cancel-btn" onclick="cancelTranslation()">Cancel translation</button>
+
+  <!-- PROGRESS -->
+  <div class="progress-card" id="progress-card">
+    <div class="progress-title" id="progress-title">Translating...</div>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="progress-status" id="progress-status">Starting...</div>
+    <div class="progress-detail" id="progress-detail"></div>
+    <div class="chunk-list" id="chunk-list"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="result-card" id="result-card">
+    <div class="result-title">✓ Translation complete</div>
+    <div class="result-sub" id="result-sub"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="download-btn" id="download-btn" onclick="downloadResult()">⬇ Download .docx</button>
+      <button class="download-btn" id="retry-build-btn" onclick="retryBuildDocx()" style="background:var(--accent);display:none;">↺ Retry building .docx</button>
+      <button class="download-btn" id="txt-download-btn" onclick="downloadTxt()" style="background:var(--text2);">⬇ Download .txt (fallback)</button>
+    </div>
+  </div>
+
+</div><!-- /content -->
+</div><!-- /app -->
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-title">Settings</div>
+    <div class="modal-sub">Your Anthropic API key is saved only in this browser and sent only to api.anthropic.com.</div>
+    <div class="field-lbl">Anthropic API key</div>
+    <input class="field-in" type="password" id="modal-key" placeholder="sk-ant-api03-..." />
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeSettings()">Cancel</button>
+      <button class="modal-save" onclick="saveKey()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// NAETISL GLOSSARY — 293 terms + custom terms support
+// ══════════════════════════════════════════════════════
+const NAETISL = [
+["504 Plan","Plan 504"],["AAC device","dispositivo de comunicación aumentativa y alternativa (AAC)"],["ABC Model","modelo ABC"],["ability","habilidad, capacidad, aptitud"],["ability grouping","distribución de estudiantes según sus habilidades"],["above average","por encima del promedio"],["absence seizure","ausencia epiléptica, crisis de ausencia"],["academic","académico/a"],["academic achievement","progreso académico, logro académico"],["Academic Achievement and Functional Performance","logro académico y desempeño funcional"],["academic aptitude","aptitud académica"],["academic background","historial académico, antecedentes académicos"],["academic English","inglés académico"],["academic language","lenguaje académico"],["academic literacy","lectoescritura académica"],["academic vocabulary","vocabulario académico"],["academic year","año lectivo, año escolar, año académico"],["accelerated","acelerado, avanzado, intensivo"],["acceleration","aceleración"],["access skill","habilidad de acceso"],["accessibility","accesibilidad"],["accessible educational material","material educativo accesible"],["accommodate","adaptar, ajustar, modificar"],["accommodation","adaptación, ajuste (NO: acomodación)"],["accomplishment","logro, cumplimiento"],["accountability","rendición de cuentas, responsabilidad"],["achievement","logro, realización"],["achievement gap","brecha en el desempeño/rendimiento escolar"],["achievement test","prueba de logros académicos"],["acquired hearing loss","pérdida de audición adquirida"],["action plan","plan de acción"],["adaptation","adaptación"],["Adapted Physical Education (APE)","Educación Física Adaptada (APE)"],["adaptive behavior","comportamiento adaptativo"],["ADHD / Attention Deficit Hyperactivity Disorder","trastorno por déficit de atención e hiperactividad (TDAH)"],["adequate yearly progress","progreso anual adecuado"],["advocacy","promoción/defensa de intereses"],["advocate","defensor/a; abogar por"],["affective disorder","trastorno afectivo"],["age equivalent (AE)","edad equivalente (AE)"],["age of majority","mayoría de edad"],["aggression","agresión"],["agitation phase","fase de agitación"],["aide","ayudante personal, tutor/a individual"],["alerting device","dispositivo de alerta"],["American Sign Language (ASL)","Lengua de Señas Estadounidense (LSA)"],["Americans with Disabilities Act (ADA)","Ley de Estadounidenses con Discapacidades (ADA)"],["annual goal","meta anual"],["annual review","revisión anual"],["anxiety disorder","trastorno de ansiedad"],["applied behavior analysis","análisis de conducta aplicada"],["appropriate","indicado, idóneo, adecuado, oportuno"],["apraxia","apraxia"],["aptitude","aptitud, capacidad"],["articulation","articulación"],["articulation disorder","trastorno de articulación"],["Asperger Syndrome","Síndrome de Asperger"],["assessment","evaluación"],["assessment plan","plan de evaluación"],["Assistive Listening Device (ALD)","dispositivo de asistencia auditiva (DAA)"],["assistive technology","tecnología de asistencia"],["assistive technology service","servicio de tecnología de asistencia"],["Assistive Technology Specialist","especialista en tecnología de asistencia"],["asthma","asma"],["at-risk","en riesgo"],["attendance rate","tasa de asistencia"],["attention","atención"],["Attention Deficit Hyperactivity Disorder (ADHD)","trastorno por déficit de atención e hiperactividad (TDAH)"],["audiogram","audiograma"],["audiological assessment","prueba audiológica"],["audiologist","audiólogo/a"],["audiology","audiología"],["auditory accommodation","adaptación auditiva"],["auditory discrimination","discriminación auditiva"],["Auditory Processing Disorder","trastorno de procesamiento auditivo (TPA)"],["auditory-verbal approach","enfoque auditivo verbal"],["Augmentative and Alternative Communication (AAC)","comunicación aumentativa y alternativa (CAA)"],["authentic assessment","evaluación auténtica"],["autism","autismo, condición del espectro autista"],["Autism Spectrum Disorder","condición del espectro autista, trastorno del espectro autista"],["baseline","referencia inicial, rendimiento de línea base"],["baseline assessment","evaluación inicial, evaluación de referencia"],["baseline data","datos iniciales, datos de referencia"],["Basic Interpersonal Communicative Skills (BICS)","Habilidades Comunicativas Interpersonales Básicas (BICS)"],["behavior","comportamiento, conducta"],["Behavior Analyst","analista conductual"],["Behavior Intervention Plan (BIP)","Plan de Intervención de la Conducta (BIP)"],["behavior management","gestión del comportamiento"],["behavior modification","modificación del comportamiento"],["behavioral goal","objetivo conductual"],["behavioral support","apoyo conductual"],["benchmark","punto de referencia"],["best practice","mejores prácticas"],["bilateral hearing loss","pérdida auditiva bilateral"],["bilingual education","educación bilingüe"],["bilingual special education","educación especial bilingüe"],["Board of Education","Consejo de Educación, Junta de Educación"],["brain break","descanso mental"],["bullying","acoso escolar"],["calm phase","fase de calma"],["case carrier / Case Manager","responsable del caso, administrador/a del caso"],["Child Find","Child Find (programa para identificar niños con discapacidad)"],["Child Study Team","equipo de estudio del/de la estudiante"],["classroom","salón de clases, aula"],["classroom observation","observación en el aula"],["close reading","lectura crítica"],["collaboration","colaboración"],["communication","comunicación"],["communication board","tablero de comunicación"],["communication need","necesidad de comunicación"],["compensatory education","educación compensatoria"],["confidentiality","confidencialidad"],["consent","consentimiento"],["consultation","consulta"],["content standards","normas/estándares de contenido"],["cooperative learning","aprendizaje cooperativo"],["coping skill","habilidad de afrontamiento"],["core curriculum","currículo básico"],["corrective feedback","retroalimentación correctiva"],["co-teaching","enseñanza compartida, coenseñanza"],["counseling","asesoramiento, orientación, terapia"],["counselor","orientador escolar, asesor"],["criterion-referenced test","prueba con criterio de referencia"],["curriculum","plan de estudios, currículo"],["Deaf","persona sorda, estudiante sordo/a"],["deafblindness","sordoceguera"],["deafness","sordera"],["decibel (dB)","decibelio (dB)"],["decoding","decodificación"],["developmental delay","atraso en el desarrollo"],["Developmental Disability (DD)","discapacidad del desarrollo"],["developmental milestone","hito en el desarrollo"],["differential instruction","enseñanza diferenciada"],["direct instruction","enseñanza directa"],["disability","discapacidad"],["disability classification","clasificación de discapacidad"],["Down syndrome","síndrome de Down"],["due process","debido proceso"],["due process hearing","audiencia de debido proceso"],["dysgraphia","disgrafía"],["dyslexia","dislexia"],["early childhood","primera infancia"],["early childhood education","educación preescolar, educación de la primera infancia"],["early childhood special education","educación especial infantil"],["early intervention","estimulación temprana, intervención temprana"],["Early Hearing Detection and Intervention (EHDI)","detección e intervención auditiva temprana (EHDI)"],["ELPAC","ELPAC"],["emotional regulation","regulación emocional"],["English Language Arts (ELA)","Lengua y Literatura en Inglés (ELA)"],["English Language Development (ELD)","Desarrollo del Lenguaje Inglés (ELD)"],["English Language Learner (ELL)","estudiante de inglés como segunda lengua, aprendiz de inglés"],["English as a Second Language (ESL)","inglés como segundo idioma (ESL)"],["environment","entorno"],["epilepsy","epilepsia"],["evaluation","evaluación"],["evidence-based practice","práctica basada en la evidencia"],["executive function","funcionamiento ejecutivo, funciones ejecutivas"],["Extended School Year (ESY)","año escolar extendido (ESY)"],["expressive language","lenguaje expresivo"],["Family Educational Rights and Privacy Act (FERPA)","Ley de Derechos Educativos y Privacidad de la Familia (FERPA)"],["free appropriate public education (FAPE)","educación pública apropiada y gratuita (FAPE)"],["functional behavioral assessment","evaluación funcional del comportamiento"],["general education","educación general"],["goal","meta, objetivo"],["grade","grado, calificación"],["graphic organizer","organizador gráfico"],["hearing aids","audífonos"],["hearing impairment","discapacidad auditiva, dificultad auditiva"],["hard of hearing (HH)","dificultad auditiva (HH)"],["Individualized Education Program (IEP)","Programa Individualizado de Educación (IEP)"],["Individuals with Disabilities Education Act (IDEA)","Ley de Educación para Personas con Discapacidad (IDEA)"],["inclusive education","educación inclusiva"],["intellectual disability","discapacidad intelectual"],["intervention","intervención"],["language","idioma, lenguaje, lengua"],["language arts","artes del lenguaje"],["learning disability","discapacidad de aprendizaje"],["learning preference","preferencia de aprendizaje"],["least restrictive environment (LRE)","entorno menos restrictivo (LMR)"],["literacy","lectoescritura, alfabetización"],["math","matemáticas"],["mediation","mediación"],["mental health","salud mental"],["modification","modificación"],["multi-step","de múltiples pasos, de varios pasos"],["needs","necesidades"],["objective","objetivo"],["occupational therapy","terapia ocupacional"],["parent","padre/madre, padre/tutor"],["parent consent","consentimiento de los padres"],["paraprofessional","paraprofesional, asistente educativo"],["physical education","educación física"],["physical therapy","fisioterapia, terapia física"],["placement","colocación, ubicación"],["present levels of academic achievement and functional performance","niveles actuales de logro académico y desempeño funcional"],["prior written notice","aviso previo por escrito"],["procedural safeguards","garantías procesales"],["progress","progreso"],["progress monitoring","seguimiento del progreso"],["reading","lectura"],["reading comprehension","comprensión de lectura"],["re-evaluation","reevaluación"],["related services","servicios relacionados"],["response to intervention (RTI)","respuesta a la intervención (RTI)"],["rubric","rúbrica"],["school district","distrito escolar"],["Section 504","Sección 504"],["self-advocacy","autoabogacía, autodefensa"],["sensorineural hearing loss","pérdida auditiva neurosensorial"],["sentence starter","iniciador de oraciones"],["services","servicios"],["sign language","lenguaje de señas"],["social skills","habilidades sociales"],["special education","educación especial"],["specialist","especialista"],["speech therapy / speech-language pathology","terapia del habla y del lenguaje"],["speech-language pathologist (SLP)","patólogo/a del habla y del lenguaje"],["Specialized Academic Instruction (SAI)","Instrucción Académica Especializada (SAI)"],["standardized test","prueba estandarizada"],["strengths","destrezas, fortalezas"],["student","estudiante, alumno/a"],["Student Study Team (SST)","equipo de estudio del/de la estudiante"],["supports","apoyos"],["teacher","maestro/a, profesor/a"],["teacher of the deaf and hard of hearing (DHH)","maestra de Sordos y con Dificultades Auditivas (DHH)"],["transition","transición"],["transition plan","plan de transición"],["transition services","servicios de transición"],["trial","ensayo, intento"],["universal design for learning (UDL)","diseño universal para el aprendizaje (DUA)"],["visual impairment","discapacidad visual, impedimento visual"],["vocabulary","vocabulario"],["word bank","banco de palabras"],["word prediction","predicción de palabras"],["work sample","muestra de trabajo"],["written expression","expresión escrita"],["text-to-speech","texto a voz"],["voice-to-text / speech-to-text","voz a texto"],["preferential seating","asiento preferencial"],["extended time","tiempo extendido"],["small group instruction","instrucción en grupo pequeño"],["verbal modeling","modelado verbal"],["remote microphone system","sistema de micrófono remoto"],["closed captions / captions","subtítulos"],["auditory breaks","pausas auditivas"],["bilingual dictionary","diccionario bilingüe"],["read aloud","lectura en voz alta"],["multi-step equations","ecuaciones de múltiples pasos"],["performance assessment","evaluación del rendimiento"],["work sample analysis","análisis de muestras de trabajo"],["audiological services","servicios audiológicos"],["HAT system (Hearing Assistive Technology)","sistema HAT (tecnología de asistencia auditiva)"],["EDU Mike","EDU Mike (dispositivo de escucha asistiva)"],["goal achieved","lograda"],["in progress","en progreso"],["accuracy","precisión"],["responsible person","persona responsable"],["phonics","fonética"],["phoneme","fonema"],["supporting details","detalles de apoyo"],["main idea","idea principal"],["inference","inferencia"],["Structured English Immersion","Inmersión en Inglés Estructurado"],["Learning Ally","Learning Ally (audiolibros)"],["Read and Write for Google","Read and Write for Google"],["Orbitnote","Orbitnote"],["CAASPP","CAASPP"],["auditory feedback","retroalimentación auditiva"],["Deaf and Hard of Hearing (DHH)","Sordos y con Dificultades Auditivas (DHH)"]
+];
+
+// ══════════════════════════════════════════════════════
+// STORAGE
+// ══════════════════════════════════════════════════════
+function getKey() { return localStorage.getItem('nmusd_anthropic') || ''; }
+function setKey(k) { localStorage.setItem('nmusd_anthropic', k); }
+function getCustomTerms() {
+  try { return JSON.parse(localStorage.getItem('nmusd_custom_terms')) || []; } catch { return []; }
+}
+
+function buildGlossaryStr() {
+  return NAETISL.map(([en,es]) => `${en} → ${es}`).join('\n');
+}
+
+function buildSystemPrompt(gender) {
+  const genderRule = gender === 'feminine'
+    ? 'Use feminine gender for the student (la estudiante, ella, su) throughout.'
+    : gender === 'masculine'
+    ? 'Use masculine gender for the student (el estudiante, él, su) throughout.'
+    : 'Keep the same gender as the original text.';
+
+  const custom = getCustomTerms();
+  const customSection = custom.length
+    ? `CRITICAL CUSTOM NMUSD TERMS — HIGHEST PRIORITY:
+Every time you encounter these English words or phrases, you MUST translate them exactly as shown below, without exception. These take priority over the NAETISL glossary and over your own judgment:
+${custom.map(t => `  - "${t.en}" → ALWAYS translate as "${t.es}"`).join('\n')}
+
+`
+    : '';
+
+  return `You are a professional document translator for Newport-Mesa Unified School District (NMUSD), California. Translate special education reports and documents from English to Spanish.
+
+${customSection}MANDATORY RULES:
+1. ${custom.length ? 'The CUSTOM NMUSD TERMS above have the absolute highest priority — always use them, even if the NAETISL glossary says something different.' : 'Use the NAETISL glossary translations for all listed terms.'}
+2. Preserve ALL proper nouns: student names, teacher names, school names, program names, dates, test scores, percentages, numbers.
+3. Do NOT translate acronyms: SAI, DHH, HAT, EDU Mike, ELPAC, IEP, ELD, ELL, ADA, FAPE, ESY, NMUSD, CAASPP, WIDA, BICS, CALP, BASC, CELF, WISC, WJ, DRA, F&P, RTI.
+4. ${genderRule}
+5. Use formal, professional register appropriate for legal/educational reports.
+6. Preserve ALL formatting markers exactly: [H1], [H2], [H3], [P], [BOLD], [LI], [TABLE], [ROW], [TH], [TD] and their closing tags. Do not translate, remove, or add markers.
+7. Return ONLY the translated text with preserved markers — no commentary, no notes, no explanations.
+8. If a sentence is already in Spanish, keep it in Spanish unchanged.
+
+NAETISL GLOSSARY (2nd Edition, February 2024):
+${buildGlossaryStr()}`;
+}
+
+// ══════════════════════════════════════════════════════
+// FILE HANDLING
+// ══════════════════════════════════════════════════════
+let docElements = [];   // parsed document structure
+let translatedElements = [];
+let cancelRequested = false;
+let resultBlob = null;
+let originalFileName = '';
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.add('drag-over');
+}
+function handleDragLeave(e) {
+  document.getElementById('upload-zone').classList.remove('drag-over');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+}
+
+async function processFile(file) {
+  if (!file.name.endsWith('.docx')) {
+    showAlert('main-error', 'Please upload a .docx file (Word document). PDF and .doc files are not supported.');
+    return;
+  }
+  hideAlert('main-error'); hideAlert('main-warn');
+  originalFileName = file.name.replace('.docx', '');
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const arrayBuffer = e.target.result;
+
+      // Wait for mammoth to be ready (up to 10s)
+      for (let t = 0; t < 100 && !mammothReady && typeof mammoth === 'undefined'; t++) {
+        await sleep(100);
+      }
+      if (typeof mammoth === 'undefined') throw new Error('The mammoth library failed to load. Please refresh the page and try again.');
+
+      // Extract structured content using mammoth
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
+
+      // Parse the HTML into our element structure
+      docElements = parseHtmlToElements(htmlResult.value);
+
+      const wordCount = docElements.reduce((sum, el) => sum + countWords(getElementText(el)), 0);
+      const pageEst = Math.round(wordCount / 300);
+
+      // Show file info
+      document.getElementById('upload-zone').style.display = 'none';
+      const fi = document.getElementById('file-info');
+      fi.style.display = 'flex';
+      document.getElementById('file-name').textContent = file.name;
+      document.getElementById('file-meta').textContent = `~${wordCount.toLocaleString()} words · ~${pageEst} pages · ${docElements.length} elements`;
+
+      // Show preview
+      const previewCard = document.getElementById('preview-card');
+      previewCard.style.display = 'block';
+      document.getElementById('preview-body').innerHTML = htmlResult.value.substring(0, 8000);
+
+      // Show options and translate button
+      document.getElementById('options-card').style.display = 'block';
+      document.getElementById('translate-btn').style.display = 'block';
+
+      if (wordCount > 15000) {
+        showAlert('main-warn', `This document is ~${wordCount.toLocaleString()} words (~${pageEst} pages). Translation will take several minutes and use multiple API calls. The progress bar will keep you updated.`, 'warn');
+      }
+
+    } catch (err) {
+      showAlert('main-error', 'Could not read the document: ' + err.message + '. Make sure it is a valid .docx file.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clearFile() {
+  docElements = []; translatedElements = []; resultBlob = null;
+  document.getElementById('upload-zone').style.display = 'block';
+  document.getElementById('file-info').style.display = 'none';
+  document.getElementById('preview-card').style.display = 'none';
+  document.getElementById('options-card').style.display = 'none';
+  document.getElementById('translate-btn').style.display = 'none';
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('progress-card').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  hideAlert('main-error'); hideAlert('main-warn');
+}
+
+function togglePreview() {
+  const body = document.getElementById('preview-body');
+  const btn = document.getElementById('preview-toggle-btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+
+// ══════════════════════════════════════════════════════
+// HTML → ELEMENT STRUCTURE
+// ══════════════════════════════════════════════════════
+// Elements: { type: 'p'|'h1'|'h2'|'h3'|'table'|'li', text, rows (for table), bold }
+function parseHtmlToElements(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const elements = [];
+
+  function processNode(node) {
+    const tag = node.tagName ? node.tagName.toLowerCase() : '';
+    if (tag === 'h1') {
+      elements.push({ type: 'h1', text: node.textContent.trim() });
+    } else if (tag === 'h2') {
+      elements.push({ type: 'h2', text: node.textContent.trim() });
+    } else if (tag === 'h3' || tag === 'h4' || tag === 'h5') {
+      elements.push({ type: 'h3', text: node.textContent.trim() });
+    } else if (tag === 'p') {
+      const text = node.textContent.trim();
+      if (text) {
+        const isBold = node.querySelector('strong, b') && node.textContent.trim() === (node.querySelector('strong, b') || {}).textContent;
+        elements.push({ type: 'p', text, bold: !!isBold });
+      }
+    } else if (tag === 'ul' || tag === 'ol') {
+      node.querySelectorAll('li').forEach(li => {
+        const text = li.textContent.trim();
+        if (text) elements.push({ type: 'li', text, listType: tag });
+      });
+    } else if (tag === 'table') {
+      const rows = [];
+      node.querySelectorAll('tr').forEach(tr => {
+        const cells = [];
+        tr.querySelectorAll('td, th').forEach(td => {
+          cells.push({ text: td.textContent.trim(), isHeader: td.tagName.toLowerCase() === 'th' });
+        });
+        if (cells.length) rows.push(cells);
+      });
+      if (rows.length) elements.push({ type: 'table', rows });
+    } else {
+      node.childNodes.forEach(child => processNode(child));
+    }
+  }
+
+  doc.body.childNodes.forEach(node => processNode(node));
+  return elements;
+}
+
+function getElementText(el) {
+  if (el.type === 'table') {
+    return el.rows.map(r => r.map(c => c.text).join(' | ')).join('\n');
+  }
+  return el.text || '';
+}
+
+function countWords(text) {
+  return text.split(/\s+/).filter(w => w.length > 0).length;
+}
+
+// ══════════════════════════════════════════════════════
+// CHUNKING — group elements into API-sized chunks
+// ══════════════════════════════════════════════════════
+function serializeElement(el) {
+  if (el.type === 'h1') return `[H1]${el.text}[/H1]`;
+  if (el.type === 'h2') return `[H2]${el.text}[/H2]`;
+  if (el.type === 'h3') return `[H3]${el.text}[/H3]`;
+  if (el.type === 'li') return `[LI]${el.text}[/LI]`;
+  if (el.type === 'p') return el.bold ? `[BOLD]${el.text}[/BOLD]` : `[P]${el.text}[/P]`;
+  if (el.type === 'table') {
+    const rows = el.rows.map(row =>
+      '[ROW]' + row.map(cell => (cell.isHeader ? '[TH]' : '[TD]') + cell.text + (cell.isHeader ? '[/TH]' : '[/TD]')).join('') + '[/ROW]'
+    ).join('\n');
+    return `[TABLE]\n${rows}\n[/TABLE]`;
+  }
+  return '';
+}
+
+function deserializeChunk(text, originalElements, startIdx) {
+  const results = [];
+  // Match all tagged elements
+  const regex = /\[(H1|H2|H3|LI|P|BOLD|TABLE)\]([\s\S]*?)\[\/(H1|H2|H3|LI|P|BOLD|TABLE)\]/g;
+  let match;
+  let idx = startIdx;
+  while ((match = regex.exec(text)) !== null) {
+    const type = match[1].toLowerCase();
+    const content = match[2].trim();
+    const orig = originalElements[idx] || {};
+    if (type === 'table') {
+      // Parse table back out
+      const rows = [];
+      const rowRegex = /\[ROW\]([\s\S]*?)\[\/ROW\]/g;
+      let rowMatch;
+      let origRowIdx = 0;
+      while ((rowMatch = rowRegex.exec(content)) !== null) {
+        const cells = [];
+        const cellRegex = /\[(TH|TD)\]([\s\S]*?)\[\/(TH|TD)\]/g;
+        let cellMatch;
+        let cellIdx = 0;
+        while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
+          const origCell = orig.rows && orig.rows[origRowIdx] ? orig.rows[origRowIdx][cellIdx] : {};
+          cells.push({ text: cellMatch[2].trim(), isHeader: cellMatch[1] === 'TH' || (origCell.isHeader || false) });
+          cellIdx++;
+        }
+        if (cells.length) rows.push(cells);
+        origRowIdx++;
+      }
+      results.push({ type: 'table', rows });
+    } else if (type === 'h1') results.push({ type: 'h1', text: content });
+    else if (type === 'h2') results.push({ type: 'h2', text: content });
+    else if (type === 'h3') results.push({ type: 'h3', text: content });
+    else if (type === 'li') results.push({ type: 'li', text: content, listType: orig.listType || 'ul' });
+    else if (type === 'bold') results.push({ type: 'p', text: content, bold: true });
+    else results.push({ type: 'p', text: content, bold: false });
+    idx++;
+  }
+  return results;
+}
+
+function buildChunks(elements, maxWords) {
+  const chunks = [];
+  let current = [];
+  let currentWords = 0;
+
+  elements.forEach((el, idx) => {
+    const words = countWords(getElementText(el));
+    // Tables always go in their own chunk if large
+    if (el.type === 'table' && words > maxWords / 2) {
+      if (current.length) { chunks.push(current); current = []; currentWords = 0; }
+      chunks.push([el]);
+      return;
+    }
+    if (currentWords + words > maxWords && current.length > 0) {
+      chunks.push(current);
+      current = []; currentWords = 0;
+    }
+    current.push(el);
+    currentWords += words;
+  });
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+// ══════════════════════════════════════════════════════
+// TRANSLATION
+// ══════════════════════════════════════════════════════
+async function startTranslation() {
+  if (!docElements.length) { showAlert('main-error', 'Please upload a document first.'); return; }
+  const key = getKey();
+  if (!key) { openSettings(); showAlert('main-error', 'Please save your Anthropic API key in Settings first.'); return; }
+
+  hideAlert('main-error'); hideAlert('main-warn');
+  cancelRequested = false;
+  translatedElements = [];
+  resultBlob = null;
+
+  const maxWords = parseInt(document.getElementById('opt-chunk').value) || 600;
+  const delayMs = (parseFloat(document.getElementById('opt-delay').value) || 1) * 1000;
+  const gender = document.getElementById('opt-gender').value;
+  const systemPrompt = buildSystemPrompt(gender);
+
+  const chunks = buildChunks(docElements, maxWords);
+  const totalChunks = chunks.length;
+
+  // Setup UI
+  document.getElementById('translate-btn').disabled = true;
+  document.getElementById('cancel-btn').style.display = 'block';
+  document.getElementById('progress-card').style.display = 'block';
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('progress-title').textContent = `Translating ${totalChunks} section${totalChunks > 1 ? 's' : ''}...`;
+
+  // Build chunk list UI
+  const chunkList = document.getElementById('chunk-list');
+  chunkList.innerHTML = chunks.map((ch, i) => {
+    const preview = getElementText(ch[0]).substring(0, 60).replace(/</g,'&lt;');
+    return `<div class="chunk-item" id="chunk-${i}">
+      <div class="chunk-dot pending" id="dot-${i}"></div>
+      <span>Section ${i+1}: ${preview}${getElementText(ch[0]).length > 60 ? '...' : ''}</span>
+    </div>`;
+  }).join('');
+
+  let elementOffset = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (cancelRequested) break;
+
+    const chunk = chunks[i];
+    setDot(i, 'active');
+    updateProgress(i, totalChunks, `Translating section ${i+1} of ${totalChunks}...`);
+
+    const serialized = chunk.map(serializeElement).join('\n\n');
+    const wordCount = countWords(serialized);
+    document.getElementById('progress-detail').textContent = `~${wordCount} words in this section`;
+
+    const userMsg = `Translate the following document section from English to Spanish. Preserve ALL formatting tags ([H1], [H2], [H3], [P], [BOLD], [LI], [TABLE], [ROW], [TH], [TD] and their closing tags) EXACTLY as they appear. Translate only the text BETWEEN the tags.\n\n${serialized}`;
+
+    try {
+      const translated = await callAnthropicWithRetry(systemPrompt, userMsg);
+      const parsed = deserializeChunk(translated, chunk, 0);
+
+      // Fallback: if parsing failed, use original elements with a note
+      if (parsed.length === 0) {
+        chunk.forEach(el => translatedElements.push(el));
+      } else {
+        parsed.forEach(el => translatedElements.push(el));
+      }
+
+      setDot(i, 'done');
+    } catch (err) {
+      setDot(i, 'error');
+      // On error keep original text for that chunk
+      chunk.forEach(el => translatedElements.push(el));
+      showAlert('main-warn', `Section ${i+1} could not be translated (${err.message}) — original text kept for that section. You can re-run to try again.`, 'warn');
+    }
+
+    elementOffset += chunk.length;
+    if (i < chunks.length - 1 && !cancelRequested) {
+      await sleep(delayMs);
+    }
+  }
+
+  document.getElementById('translate-btn').disabled = false;
+  document.getElementById('cancel-btn').style.display = 'none';
+
+  if (cancelRequested) {
+    updateProgress(0, 1, 'Translation cancelled.');
+    document.getElementById('progress-card').style.display = 'none';
+    return;
+  }
+
+  updateProgress(totalChunks, totalChunks, 'Building translated document...');
+
+  document.getElementById('progress-card').style.display = 'none';
+  const translatedWords = translatedElements.reduce((s,el) => s + countWords(getElementText(el)), 0);
+  await attemptBuildDocx(translatedWords, totalChunks);
+}
+
+function cancelTranslation() {
+  cancelRequested = true;
+  document.getElementById('cancel-btn').style.display = 'none';
+}
+
+function setDot(i, state) {
+  const dot = document.getElementById('dot-' + i);
+  if (dot) dot.className = 'chunk-dot ' + state;
+}
+
+function updateProgress(done, total, status) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-status').textContent = status;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ══════════════════════════════════════════════════════
+// BUILD DOCX OUTPUT
+// ══════════════════════════════════════════════════════
+async function buildDocx(elements, fileName) {
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+          HeadingLevel, AlignmentType, WidthType, BorderStyle, ShadingType,
+          LevelFormat } = docx;
+
+  const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+  const borders = { top: border, bottom: border, left: border, right: border };
+  const cellMargins = { top: 80, bottom: 80, left: 120, right: 120 };
+
+  // Determine table column count for width calc
+  function makeTableEl(el) {
+    const maxCols = Math.max(...el.rows.map(r => r.length));
+    const colWidth = Math.floor(9360 / maxCols);
+    const colWidths = Array(maxCols).fill(colWidth);
+
+    return new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: colWidths,
+      rows: el.rows.map((row, ri) =>
+        new TableRow({
+          children: row.map((cell, ci) =>
+            new TableCell({
+              borders,
+              width: { size: colWidth, type: WidthType.DXA },
+              shading: { fill: (ri === 0 || cell.isHeader) ? 'D5E8F0' : 'FFFFFF', type: ShadingType.CLEAR },
+              margins: cellMargins,
+              children: [new Paragraph({
+                children: [new TextRun({
+                  text: cell.text,
+                  bold: ri === 0 || cell.isHeader,
+                  font: 'Arial', size: 22
+                })]
+              })]
+            })
+          )
+        })
+      )
+    });
+  }
+
+  const children = [];
+  let inList = false;
+
+  elements.forEach((el, i) => {
+    if (el.type === 'h1') {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({ text: el.text, font: 'Arial', size: 32, bold: true })]
+      }));
+    } else if (el.type === 'h2') {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({ text: el.text, font: 'Arial', size: 28, bold: true })]
+      }));
+    } else if (el.type === 'h3') {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_3,
+        children: [new TextRun({ text: el.text, font: 'Arial', size: 24, bold: true })]
+      }));
+    } else if (el.type === 'li') {
+      children.push(new Paragraph({
+        bullet: { level: 0 },
+        children: [new TextRun({ text: el.text, font: 'Arial', size: 22 })]
+      }));
+    } else if (el.type === 'p') {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: el.text, font: 'Arial', size: 22, bold: el.bold || false })]
+      }));
+    } else if (el.type === 'table') {
+      // Add spacing before table
+      children.push(new Paragraph({ children: [new TextRun({ text: '', size: 22 })] }));
+      children.push(makeTableEl(el));
+      children.push(new Paragraph({ children: [new TextRun({ text: '', size: 22 })] }));
+    }
+  });
+
+  const doc = new Document({
+    styles: {
+      default: { document: { run: { font: 'Arial', size: 22 } } }
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 12240, height: 15840 },
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+        }
+      },
+      children
+    }]
+  });
+
+  const buffer = await Packer.toBlob(doc);
+  return buffer;
+}
+
+async function attemptBuildDocx(translatedWords, totalChunks) {
+  // Wait up to 8 seconds for docx library
+  for (let t = 0; t < 80 && typeof docx === 'undefined'; t++) await sleep(100);
+
+  const resultCard = document.getElementById('result-card');
+  const sub = document.getElementById('result-sub');
+  const dlBtn = document.getElementById('download-btn');
+  const retryBtn = document.getElementById('retry-build-btn');
+  const txtBtn = document.getElementById('txt-download-btn');
+
+  resultCard.style.display = 'block';
+  sub.textContent = `${translatedWords.toLocaleString()} words translated · ${totalChunks} sections`;
+
+  if (typeof docx === 'undefined') {
+    dlBtn.style.display = 'none';
+    retryBtn.style.display = 'none';
+    txtBtn.style.display = 'inline-flex';
+    showAlert('main-warn', 'The Word document library (docx.js) did not load — this is usually a network issue. Your translation is safe. You can download it as plain text now, or click "Retry building .docx" after refreshing. The translation will not be lost until you close this tab.', 'warn');
+    // Show retry after a delay
+    setTimeout(() => { retryBtn.style.display = 'inline-flex'; }, 500);
+    return;
+  }
+
+  try {
+    resultBlob = await buildDocx(translatedElements, originalFileName);
+    dlBtn.style.display = 'inline-flex';
+    txtBtn.style.display = 'inline-flex';
+    retryBtn.style.display = 'none';
+    sub.textContent += ' · Ready to download';
+  } catch (err) {
+    dlBtn.style.display = 'none';
+    retryBtn.style.display = 'inline-flex';
+    txtBtn.style.display = 'inline-flex';
+    showAlert('main-warn', 'Translation complete but the .docx could not be built: ' + err.message + '. Use "Download .txt" or click "Retry building .docx".', 'warn');
+  }
+}
+
+async function retryBuildDocx() {
+  if (!translatedElements.length) { showAlert('main-error', 'No translation in memory. Please translate the document again.'); return; }
+  const btn = document.getElementById('retry-build-btn');
+  btn.textContent = 'Building...'; btn.disabled = true;
+  hideAlert('main-warn');
+  const words = translatedElements.reduce((s,el) => s + countWords(getElementText(el)), 0);
+  await attemptBuildDocx(words, '?');
+  btn.textContent = '↺ Retry building .docx'; btn.disabled = false;
+}
+
+function downloadTxt() {
+  if (!translatedElements.length) return;
+  const lines = translatedElements.map(el => {
+    if (el.type === 'h1') return '\n=== ' + el.text + ' ===\n';
+    if (el.type === 'h2') return '\n--- ' + el.text + ' ---\n';
+    if (el.type === 'h3') return '\n' + el.text + '\n';
+    if (el.type === 'li') return '  • ' + el.text;
+    if (el.type === 'table') return el.rows.map(r => r.map(c => c.text).join(' | ')).join('\n');
+    return el.text;
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = originalFileName + '_TRADUCIDO.txt'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadResult() {
+  if (!resultBlob) return;
+  const url = URL.createObjectURL(resultBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = originalFileName + '_TRADUCIDO.docx';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════
+// API WITH RETRY
+// ══════════════════════════════════════════════════════
+async function callAnthropicWithRetry(systemPrompt, userMsg, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await callAnthropic(systemPrompt, userMsg);
+    } catch (err) {
+      const isRetryable = err.message.includes('overloaded') || err.message.includes('529') || err.message.includes('500') || err.message.includes('Internal server');
+      if (isRetryable && attempt < maxRetries) {
+        const wait = attempt * 4000;
+        document.getElementById('progress-detail').textContent = `Retrying in ${wait/1000}s (attempt ${attempt+1}/${maxRetries})...`;
+        await sleep(wait);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+async function callAnthropic(systemPrompt, userMsg) {
+  const key = getKey();
+  if (!key) throw new Error('No API key. Open Settings to add your Anthropic API key.');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMsg }]
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    if (resp.status === 401) throw new Error('Invalid API key. Check Settings.');
+    if (resp.status === 429) throw new Error('Rate limit reached. Increase the delay between chunks in options.');
+    if (resp.status === 529 || resp.status === 500) throw new Error('Anthropic servers overloaded. Will retry automatically.');
+    throw new Error(err.error?.message || 'API error ' + resp.status);
+  }
+  const data = await resp.json();
+  return data.content[0].text.trim();
+}
+
+// ══════════════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════════════
+function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+function saveKey() {
+  const k = document.getElementById('modal-key').value.trim();
+  if (!k.startsWith('sk-')) { alert("Key should start with 'sk-ant-...'"); return; }
+  setKey(k);
+  document.getElementById('modal-key').value = '';
+  closeSettings();
+  updateKeyBadge();
+}
+function updateKeyBadge() {
+  const b = document.getElementById('key-badge');
+  if (getKey()) { b.textContent = '✓ Key saved'; b.className = 'topbar-btn ok'; }
+  else { b.textContent = '⚙ Settings'; b.className = 'topbar-btn'; }
+}
+
+// ══════════════════════════════════════════════════════
+// ALERTS
+// ══════════════════════════════════════════════════════
+function showAlert(id, msg, type = 'error') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg; el.className = 'alert ' + type; el.style.display = 'block';
+}
+function hideAlert(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+
+// ══════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════
+updateKeyBadge();
+// Close modal on overlay click
+document.getElementById('settings-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+</script>
+</body>
+</html>
